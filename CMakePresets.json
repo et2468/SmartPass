@@ -1,0 +1,56 @@
+//{
+//  "version": 3,
+//  "configurePresets": [
+//    {
+//      "name": "windows-default",
+//      "displayName": "Windows x64 Debug",
+//      "generator": "Visual Studio 17 2022",
+//      "architecture": "x64",
+//      "binaryDir": "${sourceDir}/build",
+//      "cacheVariables": {
+//        "CMAKE_BUILD_TYPE": "Debug",
+//        "CMAKE_PREFIX_PATH": "C:/Qt/6.7.0/msvc2019_64"
+//      }
+//    },
+//    {
+//      "name": "windows-release",
+//      "displayName": "Windows x64 Release",
+//      "generator": "Visual Studio 17 2022",
+//      "architecture": "x64",
+//      "binaryDir": "${sourceDir}/build-release",
+//      "cacheVariables": {
+//        "CMAKE_BUILD_TYPE": "Release",
+//        "CMAKE_PREFIX_PATH": "C:/Qt/6.7.0/msvc2019_64"
+//      }
+//    }
+//  ],
+//  "buildPresets": [
+//    {
+//      "name": "windows-debug-build",
+//      "configurePreset": "windows-default"
+//    },
+//    {
+//      "name": "windows-release-build",
+//      "configurePreset": "windows-release"
+//    }
+//  ]
+//}
+
+
+{
+  "version": 3,
+  "configurePresets": [
+    {
+      "name": "x64-Debug",
+      "displayName": "Windows x64 Debug",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "C:/vcpkg/installed/x64-windows",
+        "CMAKE_MODULE_PATH": "C:/vcpkg/installed/x64-windows/share/ffmpeg"
+      }
+    }
+  ]
+}

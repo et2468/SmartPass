@@ -3,7 +3,7 @@
 #include <QMessageBox>
 #include <QInputDialog>
 
-// opencvㅇ의 핵심 헤더 파일로, 이미지 처리와 관련된 모든 기능을 포함하는 종합적인 헤더
+// opencv의 핵심 헤더 파일로, 이미지 처리와 관련된 모든 기능을 포함하는 종합적인 헤더
 #include <opencv2/opencv.hpp>
 
 #include <QCoreApplication> // 실행 파일 위치 추적용
@@ -84,28 +84,84 @@ void MainWindow::onConnectClicked()
     m_ui->btnConnect->setText(QStringLiteral("연결 끊기"));
 }
 
+
 void MainWindow::onFrameReady(QImage image)
 {
+    // 1. QImage를 OpenCV Mat으로 변환
     cv::Mat frame = cv::Mat(image.height(), image.width(), CV_8UC3,
         const_cast<uchar*>(image.bits()),
         image.bytesPerLine()).clone();
     cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
     m_currentFrame = frame;
 
-    // 얼굴 감지는 30프레임마다 한 번만
-    if (m_frameCount % 30 == 0 && m_faceManager.isInitialized()) {
-        m_lastFaces = m_faceManager.detectFaces(frame);
+    std::vector<cv::Rect> faces;
+
+    // 2. 출석 체크 모드일 때의 로직
+    if (m_attendanceMode && m_frameCount % 30 == 0 && m_faceManager.isInitialized()) {
+
+        // [렉 방지 최적화] 탐지 속도를 위해 이미지를 절반 크기로 리사이즈하여 탐지
+        cv::Mat smallFrame;
+        cv::resize(frame, smallFrame, cv::Size(frame.cols / 2, frame.rows / 2));
+
+        // 탐지 수행 (리사이즈된 이미지 사용)
+        faces = m_faceManager.detectFaces(smallFrame);
+
+        // 좌표를 원래 크기로 복원 (리사이즈했으므로 2배)
+        for (auto& face : faces) {
+            face.x *= 2; face.y *= 2;
+            face.width *= 2; face.height *= 2;
+        }
+
+        if (!faces.empty()) {
+            // [테스트] 얼굴이 감지되면 임베딩 추출 및 가상 거리 계산
+            auto embedding = m_faceManager.extractEmbedding(frame, faces[0]);
+
+            // 테스트용: 가상의 유사도 점수 (0.1 ~ 0.5 사이)
+            float fakeDistance = 0.325f;
+
+            m_attendanceMode = false;
+            m_failCount = 0;
+
+            // UI 업데이트
+            QString scoreText = QString::number(fakeDistance, 'f', 3);
+            QMetaObject::invokeMethod(this, [this, scoreText]() {
+                m_ui->btnAttendance->setText(QStringLiteral("출석 체크 시작"));
+                QString message = QStringLiteral("얼굴이 감지되었습니다!\n테스트 유사도(Distance): %1\n\n출석 처리되었습니다.")
+                    .arg(scoreText);
+                QMessageBox::information(this, QStringLiteral("출석 확인"), message);
+                });
+        }
+        else {
+            // 얼굴 못 찾음
+            m_failCount++;
+            if (m_failCount >= 10) {
+                m_attendanceMode = false;
+                m_failCount = 0;
+                QMetaObject::invokeMethod(this, [this]() {
+                    m_ui->btnAttendance->setText(QStringLiteral("출석 체크 시작"));
+                    QMessageBox::warning(this, QStringLiteral("알림"),
+                        QStringLiteral("등록된 학생을 찾을 수 없습니다. 출석 체크를 중단합니다."));
+                    });
+            }
+        }
     }
+    else {
+        faces = m_lastFaces;
+    }
+
+    // 3. 얼굴 사각형 그리기
+    cv::Scalar boxColor = m_attendanceMode ? cv::Scalar(255, 255, 0) : cv::Scalar(0, 255, 0);
+    for (const auto& face : faces) {
+        cv::rectangle(frame, face, boxColor, 2);
+    }
+    m_lastFaces = faces;
     m_frameCount++;
 
-    for (const auto& face : m_lastFaces) {
-        cv::rectangle(frame, face, cv::Scalar(0, 255, 0), 2);
-    }
-
-    // 화면 표시만 매 프레임
+    // 4. 화면 출력
     cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
     QImage result(frame.data, frame.cols, frame.rows,
         frame.step, QImage::Format_RGB888);
+
     m_ui->labelVideo->setPixmap(
         QPixmap::fromImage(result).scaled(
             m_ui->labelVideo->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)

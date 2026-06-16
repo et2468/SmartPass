@@ -68,13 +68,3 @@ set_target_properties(MyProject PROPERTIES
     WIN32_EXECUTABLE TRUE
     MACOSX_BUNDLE TRUE
 )
-
-# 💡 [개선] 바이너리 파일이 복사 중 깨지는 것을 방지하기 위해 
-# CMAKE_COMMAND 내장 복사 대신 OS 고유의 바이너리 복사 명령(robocopy) 활용 트리거
-# 또한, 멀티 구성(Debug/Release) 빌드 폴더 경로를 안전하게 추적하도록 변경
-add_custom_command(TARGET MyProject POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    "${CMAKE_CURRENT_SOURCE_DIR}/models"
-    "$<TARGET_FILE_DIR:MyProject>/models"
-    COMMENT "💡 [최종 안전 모드] CMake 내장 명령으로 models 파일 복사 중..."
-)

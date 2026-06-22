@@ -7,15 +7,16 @@ FaceManager::FaceManager() : m_detector(dlib::get_frontal_face_detector()) {
 
 FaceManager::~FaceManager() = default;
 
-std::string FaceManager::init(const std::string& shapePredictorPath, const std::string& faceRecognitionPath) {
+bool FaceManager::init(const std::string& shapePredictorPath, const std::string& faceRecognitionPath) {
     try {
         dlib::deserialize(shapePredictorPath) >> m_shapePredictor;
         dlib::deserialize(faceRecognitionPath) >> *m_net;
         m_initialized = true;
-        return "Success";
+        return true;
     }
     catch (std::exception& e) {
-        return e.what();
+        m_initialized = false;
+        return false;
     }
 }
 

@@ -45,6 +45,8 @@ add_executable(MyProject
     facemanager.h
     dbworker.cpp
     dbworker.h
+    facedetectionworker.cpp
+    facedetectionworker.h
 )
 
 target_include_directories(MyProject PRIVATE

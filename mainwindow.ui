@@ -41,7 +41,7 @@
       <item>
        <widget class="QPushButton" name="btnAttendance">
         <property name="text">
-         <string>출석 체크 시작</string>
+         <string>출석 체크!</string>
         </property>
        </widget>
       </item>

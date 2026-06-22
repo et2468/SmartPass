@@ -1,23 +1,29 @@
 ﻿#include "mainwindow.h"
 
+// Qt
+#include <QCoreApplication> 
 #include <QMessageBox>
-#include <QInputDialog>
+#include <QInputDialog> 
+#include <qdir.h>
+#include <QDebug>
+#include <QMetaType>
 
-// opencv의 핵심 헤더 파일로, 이미지 처리와 관련된 모든 기능을 포함하는 종합적인 헤더
+// opencv
 #include <opencv2/opencv.hpp>
 
-#include <QCoreApplication> // 실행 파일 위치 추적용
-#include <QDir>             // 윈도우 스타일 경로(\) 변환용
-#include <iostream>         // 콘솔 디버깅 출력용
+// ui_mainWindow.h
+#include "ui_mainwindow.h"
 
-#include "ui_mainwindow.h" // Qt의 레이아웃과 위젯을 정의하는 헤더 (Qt의 UI 디자이너에서 자동으로 생성)
 
-#include <dlib/revision.h>
-
-// 0.MainWindow 클래스 생성자: UI 셋업, DB 연결, dlib 모델 로드, 버튼과 슬롯 함수 연결
-MainWindow::MainWindow(QWidget* parent):QMainWindow(parent)
+// 생성자 함수
+MainWindow::MainWindow(QWidget* parent) :QMainWindow(parent)
 {
-	// UI Manager 셋업
+    qDebug() << "MainWindow initiating";
+
+    qRegisterMetaType<cv::Mat>("cv::Mat");
+    qRegisterMetaType<std::vector<cv::Rect>>("std::vector<cv::Rect>");
+
+    // ui 도구
     m_ui = new Ui::MainWindow;
     m_ui->setupUi(this);
 
@@ -25,42 +31,28 @@ MainWindow::MainWindow(QWidget* parent):QMainWindow(parent)
     connect(m_ui->btnRegister, &QPushButton::clicked, this, &MainWindow::onRegisterClicked);
     connect(m_ui->btnAttendance, &QPushButton::clicked, this, &MainWindow::onAttendanceClicked);
 
-    // DB Worker 셋업
+    // DB Worker
     m_dbWorker.connect("localhost", "5432", "ai_face_attendance_check", "postgres", "1234");
 
-    // dlib 모델 로드
-    QString appDir = QCoreApplication::applicationDirPath();
+    // FaceDetectionWorker
+    m_faceDetectionThread = new QThread(this);
+    m_faceDetectionWorker = new FaceDetectionWorker();
+    m_faceDetectionWorker->moveToThread(m_faceDetectionThread);
 
-    std::string path1 = "C:/Users/asus/Desktop/models/shape_predictor_68_face_landmarks.dat";
-    std::string path2 = "C:/Users/asus/Desktop/models/dlib_face_recognition_resnet_model_v1.dat";
+    m_faceDetectionThread->start();
 
-    // dlib가 제공하는 DLIB_MAJOR_VERSION(예: 19)과 DLIB_MINOR_VERSION(예: 24)을 활용합니다.
-    QString dlibVersionStr = QString("현재 설치된 dlib 버전: %1.%2")
-        .arg(DLIB_MAJOR_VERSION)
-        .arg(DLIB_MINOR_VERSION);
+    QMetaObject::invokeMethod(m_faceDetectionWorker, "initManager",
+        Qt::QueuedConnection,
+        Q_ARG(QString, "C:/Users/asus/Desktop/models/shape_predictor_68_face_landmarks.dat", ),
+        Q_ARG(QString, "C:/Users/asus/Desktop/models/dlib_face_recognition_resnet_model_v1.dat"));
 
-    // 3. 팝업창으로 짜잔! 띄우기
-    QMessageBox::information(this, "vcpkg dlib 버전 확인", dlibVersionStr);
-
-
-    // 함수를 실행하고 그 결과(리턴값)를 변수에 바로 받습니다.
-    std::string errorResult = m_faceManager.init(path1, path2);
-
-    // 리턴값이 텅 비어있다면? -> 에러 없이 성공했다는 뜻!
-    if (errorResult.empty()) {
-        QMessageBox::information(this, "성공", "🎉 dlib 인공지능 모델 로드에 성공했습니다!");
-    }
-    // 리턴값에 에러 내용(e)이 들어있다면? -> 팝업으로 띄우기!
-    else {
-        QString guiErrorMsg = QString::fromLocal8Bit(errorResult.c_str());
-        QMessageBox::critical(this, "dlib 로드 에러 발생", guiErrorMsg);
-    }
+    connect(this, &MainWindow::requestDetection, m_faceDetectionWorker, &FaceDetectionWorker::processFrame);
+    connect(m_faceDetectionWorker, &FaceDetectionWorker::resultReady, this, &MainWindow::onDetectionResult);
 }
 
-// 1.연결 버튼에 적용되는 슬롯 함수
+// 연결 버튼
 void MainWindow::onConnectClicked()
 {   
-	// 이미 연결된 상태라면 연결 해제, rtspWorker 중지 및 메모리 해제, 버튼 텍스트 원복
     if (m_rtspWorker) {
         m_rtspWorker->stop();
         delete m_rtspWorker;
@@ -69,103 +61,69 @@ void MainWindow::onConnectClicked()
         return;
     }
 
-	// 입력된 URL이 비어있으면 경고 팝업을 띄우고 함수 종료
     QString url = m_ui->lineEditUrl->text().trimmed();
     if (url.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("경고"), QStringLiteral("RTSP URL을 입력하세요."));
         return;
     }
 
-	// RtspWorker 생성 및 시작, 시그널 연결, 버튼 텍스트 변경
+	// rtspWorker 생성 및 시그널 연결
     m_rtspWorker = new RtspWorker(url, this);
-	connect(m_rtspWorker, &RtspWorker::frameReady, this, &MainWindow::onFrameReady); // 프레임이 준비되었을 때 onFrameReady 슬롯 함수가 호출되도록 연결
-	connect(m_rtspWorker, &RtspWorker::errorOccurred, this, &MainWindow::onError);  // 오류가 발생했을 때 onError 슬롯 함수가 호출되도록 연결
-    m_rtspWorker->start(); // QThread의 start()함수 안에 run()함수가 호출
+	connect(m_rtspWorker, &RtspWorker::frameReady, this, &MainWindow::onFrameReady);
+	connect(m_rtspWorker, &RtspWorker::errorOccurred, this, &MainWindow::onError);
+    m_rtspWorker->start();
     m_ui->btnConnect->setText(QStringLiteral("연결 끊기"));
 }
 
-
+// 화면 랜더링 및 얼굴 감지 요청
 void MainWindow::onFrameReady(QImage image)
 {
-    // 1. QImage를 OpenCV Mat으로 변환
     cv::Mat frame = cv::Mat(image.height(), image.width(), CV_8UC3,
-        const_cast<uchar*>(image.bits()),
-        image.bytesPerLine()).clone();
+        const_cast<uchar*>(image.bits()), image.bytesPerLine()).clone();
     cv::cvtColor(frame, frame, cv::COLOR_RGB2BGR);
-    m_currentFrame = frame;
 
-    std::vector<cv::Rect> faces;
+    if (m_attendanceMode && m_frameCount % 30 == 0) {
+        m_isFaceDetectionWorkerBusy = true; 
 
-    // 2. 출석 체크 모드일 때의 로직
-    if (m_attendanceMode && m_frameCount % 30 == 0 && m_faceManager.isInitialized()) {
-
-        // [렉 방지 최적화] 탐지 속도를 위해 이미지를 절반 크기로 리사이즈하여 탐지
-        cv::Mat smallFrame;
-        cv::resize(frame, smallFrame, cv::Size(frame.cols / 2, frame.rows / 2));
-
-        // 탐지 수행 (리사이즈된 이미지 사용)
-        faces = m_faceManager.detectFaces(smallFrame);
-
-        // 좌표를 원래 크기로 복원 (리사이즈했으므로 2배)
-        for (auto& face : faces) {
-            face.x *= 2; face.y *= 2;
-            face.width *= 2; face.height *= 2;
-        }
-
-        if (!faces.empty()) {
-            // [테스트] 얼굴이 감지되면 임베딩 추출 및 가상 거리 계산
-            auto embedding = m_faceManager.extractEmbedding(frame, faces[0]);
-
-            // 테스트용: 가상의 유사도 점수 (0.1 ~ 0.5 사이)
-            float fakeDistance = 0.325f;
-
-            m_attendanceMode = false;
-            m_failCount = 0;
-
-            // UI 업데이트
-            QString scoreText = QString::number(fakeDistance, 'f', 3);
-            QMetaObject::invokeMethod(this, [this, scoreText]() {
-                m_ui->btnAttendance->setText(QStringLiteral("출석 체크 시작"));
-                QString message = QStringLiteral("얼굴이 감지되었습니다!\n테스트 유사도(Distance): %1\n\n출석 처리되었습니다.")
-                    .arg(scoreText);
-                QMessageBox::information(this, QStringLiteral("출석 확인"), message);
-                });
-        }
-        else {
-            // 얼굴 못 찾음
-            m_failCount++;
-            if (m_failCount >= 10) {
-                m_attendanceMode = false;
-                m_failCount = 0;
-                QMetaObject::invokeMethod(this, [this]() {
-                    m_ui->btnAttendance->setText(QStringLiteral("출석 체크 시작"));
-                    QMessageBox::warning(this, QStringLiteral("알림"),
-                        QStringLiteral("등록된 학생을 찾을 수 없습니다. 출석 체크를 중단합니다."));
-                    });
-            }
-        }
-    }
-    else {
-        faces = m_lastFaces;
+        emit requestDetection(frame.clone());
     }
 
-    // 3. 얼굴 사각형 그리기
     cv::Scalar boxColor = m_attendanceMode ? cv::Scalar(255, 255, 0) : cv::Scalar(0, 255, 0);
-    for (const auto& face : faces) {
+    for (const auto& face : m_lastFaces) {
         cv::rectangle(frame, face, boxColor, 2);
     }
-    m_lastFaces = faces;
+
     m_frameCount++;
 
-    // 4. 화면 출력
     cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-    QImage result(frame.data, frame.cols, frame.rows,
-        frame.step, QImage::Format_RGB888);
+    QImage result(frame.data, frame.cols, frame.rows, frame.step, QImage::Format_RGB888);
+    m_ui->labelVideo->setPixmap(QPixmap::fromImage(result).scaled(
+        m_ui->labelVideo->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation));
+}
 
-    m_ui->labelVideo->setPixmap(
-        QPixmap::fromImage(result).scaled(
-            m_ui->labelVideo->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation)
-    );
+// 얼굴 감지 결과 처리
+void MainWindow::onDetectionResult(std::vector<cv::Rect> faces) {
+    qDebug() << "face count: " << faces.size();
+
+    m_lastFaces = faces;
+    m_isFaceDetectionWorkerBusy = false;
+    if (!faces.empty()) {
+        m_attendanceMode = false; 
+        m_ui->btnAttendance->setText(QStringLiteral("출석 체크!"));
+
+        qDebug() << "### detecting successed! attendancd mode off";
+
+    }
+    else {
+        m_failCount++;
+        qDebug() << "### detecting fail counting" << m_failCount;
+        if (m_failCount >= 10) {
+            m_attendanceMode = false;
+            m_ui->btnAttendance->setText(QStringLiteral("출석 체크!"));
+            m_failCount = 0;
+            qDebug() << "### fail counting over 10. attendancd mode off";
+        }
+    }
 }
 
 void MainWindow::onError(QString message)
@@ -178,63 +136,70 @@ void MainWindow::onError(QString message)
 
 void MainWindow::onRegisterClicked()
 {
-    if (m_currentFrame.empty()) {
-        QMessageBox::warning(this, QStringLiteral("경고"), QStringLiteral("먼저 카메라를 연결하세요."));
-        return;
-    }
+    //if (m_currentFrame.empty()) {
+    //    QMessageBox::warning(this, QStringLiteral("경고"), QStringLiteral("먼저 카메라를 연결하세요."));
+    //    return;
+    //}
 
-    // 🌟 생성자 단계에서 로드가 실패했을 경우를 대비한 버튼 클릭 시점 재시도 루틴
-    if (!m_faceManager.isInitialized()) {
-        std::cout << "[재시도] dlib 모델이 로드되지 않아 다시 로드를 시도합니다..." << std::endl;
+    //// 생성자 단계에서 로드가 실패했을 경우를 대비한 버튼 클릭 시점 재시도 루틴
+    //if (!m_faceManager.isInitialized()) {
+    //    std::cout << "[재시도] dlib 모델이 로드되지 않아 다시 로드를 시도합니다..." << std::endl;
 
-        std::string path1 = "C:/Users/asus/Desktop/models/shape_predictor_68_face_landmarks.dat";
-        std::string path2 = "C:/Users/asus/Desktop/models/dlib_face_recognition_resnet_model_v1.dat";
-        std::string errorResult = m_faceManager.init(path1, path2);
-    }
+    //    std::string path1 = "C:/Users/asus/Desktop/models/shape_predictor_68_face_landmarks.dat";
+    //    std::string path2 = "C:/Users/asus/Desktop/models/dlib_face_recognition_resnet_model_v1.dat";
+    //    std::string errorResult = m_faceManager.init(path1, path2);
+    //}
 
-    // 최종 실패 팝업
-    if (!m_faceManager.isInitialized()) {
-        QString appDir = QCoreApplication::applicationDirPath();
-        QString cleanPath = QDir::toNativeSeparators(appDir + "/models/shape_predictor_68_face_landmarks.dat");
+    //// 최종 실패 팝업
+    //if (!m_faceManager.isInitialized()) {
+    //    QString path = QDir(QCoreApplication::applicationDirPath()).filePath("models/shape_predictor_68_face_landmarks.dat");
 
-        QMessageBox::critical(this, QStringLiteral("최종 확인"),
-            QStringLiteral("dlib 로드 실패!\n\n프로그램이 찾고 있는 실제 경로:\n") + cleanPath +
-            QStringLiteral("\n\n해당 위치에 파일이 '진짜' 존재하는지 탐색기로 한 번 더 확인해주세요."));
-        return;
-    }
+    //    QString message = QStringLiteral("dlib 로드 실패!\n\n"
+    //        "프로그램이 찾고 있는 실제 경로:\n%1\n\n"
+    //        "해당 위치에 파일이 '진짜' 존재하는지 탐색기로 한 번 더 확인해주세요.")
+    //        .arg(path);
 
-    std::vector<cv::Rect> faces = m_faceManager.detectFaces(m_currentFrame);
-    if (faces.empty()) {
-        QMessageBox::warning(this, QStringLiteral("경고"), QStringLiteral("얼굴을 감지할 수 없습니다."));
-        return;
-    }
+    //    QMessageBox::critical(this, QStringLiteral("최종 확인"), message);
+    //    return;
+    //}
 
-    bool ok;
-    QString name = QInputDialog::getText(this, QStringLiteral("학생 등록"), QStringLiteral("이름:"), QLineEdit::Normal, "", &ok);
-    if (!ok || name.isEmpty()) return;
+    //std::vector<cv::Rect> faces = m_faceManager.detectFaces(m_currentFrame);
+    //if (faces.empty()) {
+    //    QMessageBox::warning(this, QStringLiteral("경고"), QStringLiteral("얼굴을 감지할 수 없습니다."));
+    //    return;
+    //}
 
-    QString studentId = QInputDialog::getText(this, QStringLiteral("학생 등록"), QStringLiteral("학번:"), QLineEdit::Normal, "", &ok);
-    if (!ok || studentId.isEmpty()) return;
+    //bool ok;
+    //QString name = QInputDialog::getText(this, QStringLiteral("학생 등록"), QStringLiteral("이름:"), QLineEdit::Normal, "", &ok);
+    //if (!ok || name.isEmpty()) return;
 
-    auto embedding = m_faceManager.extractEmbedding(m_currentFrame, faces[0]);
-    if (m_dbWorker.registerStudent(name.toStdString(), studentId.toStdString(), embedding)) {
-        QMessageBox::information(this, QStringLiteral("성공"), name + QStringLiteral(" 학생이 등록되었습니다."));
-    }
-    else {
-        QMessageBox::critical(this, QStringLiteral("오류"), QStringLiteral("등록에 실패했습니다."));
-    }
+    //QString studentId = QInputDialog::getText(this, QStringLiteral("학생 등록"), QStringLiteral("학번:"), QLineEdit::Normal, "", &ok);
+    //if (!ok || studentId.isEmpty()) return;
+
+    //auto embedding = m_faceManager.extractEmbedding(m_currentFrame, faces[0]);
+    //if (m_dbWorker.registerStudent(name.toStdString(), studentId.toStdString(), embedding)) {
+    //    QMessageBox::information(this, QStringLiteral("성공"), name + QStringLiteral(" 학생이 등록되었습니다."));
+    //}
+    //else {
+    //    QMessageBox::critical(this, QStringLiteral("오류"), QStringLiteral("등록에 실패했습니다."));
+    //}
 }
 
 void MainWindow::onAttendanceClicked()
 {
     m_attendanceMode = !m_attendanceMode;
-    m_ui->btnAttendance->setText(m_attendanceMode ? QStringLiteral("출석 체크 중지") : QStringLiteral("출석 체크 시작"));
+    m_ui->btnAttendance->setText(m_attendanceMode ? QStringLiteral("출석 체크 중지") : QStringLiteral("출석 체크!"));
 }
 
 
-// 99.MainWindow 소멸될 때, 리소스를 해제
+
+// 리소스 해제
 MainWindow::~MainWindow()
 {
+    m_faceDetectionThread->quit();
+    m_faceDetectionThread->wait();
+    delete m_faceDetectionWorker;
+
     if (m_rtspWorker) {
         m_rtspWorker->stop();
         delete m_rtspWorker;

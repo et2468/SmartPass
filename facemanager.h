@@ -51,7 +51,7 @@ public:
     FaceManager();
     ~FaceManager();
 
-    std::string init(const std::string& shapePredictorPath, const std::string& faceRecognitionPath);
+    bool init(const std::string& shapePredictorPath, const std::string& faceRecognitionPath);
     std::vector<cv::Rect> detectFaces(const cv::Mat& frame);
     std::vector<float> extractEmbedding(const cv::Mat& frame, const cv::Rect& faceRect);
     bool isInitialized() const { return m_initialized; }

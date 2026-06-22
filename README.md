@@ -4,7 +4,7 @@
 
 AI를 활용한 자동 출석프로그램입니다.
 
-학교, 직장 등에서 정확하고 간편하게 출석관리를 하실 수 있습니다.
+학교 또는 직장에서 간편하게 출석관리를 하실 수 있습니다.
 
 
 
@@ -18,7 +18,7 @@ AI가 자동으로 출석을 확인하고 데이터를 저장해줍니다.
 
 1. Language: C++
 2. IDE: Visual Studio 2022
-3. Package: Qt5, FFmpeg OpenCV, dlib
+3. Package: Qt5, FFmpeg, OpenCV, dlib
 4. Package Manager: vcpkg
 5. Build System: CMake
 6. external program: WebCam, MediaMTX, FFmpeg, Postgres Database

@@ -29,16 +29,16 @@ AI가 자동으로 출석을 확인하고 데이터를 저장해줍니다.
 
 ![image-20260615191527650](img/image-20260615191527650.png)
 
-CCTV 영상 스트리밍 플로우 (User->WebCam->Media Server->Program Server)
+영상 스트리밍 플로우
 
-1. User는 노트북의 웹캠에 얼굴을 인식
+1. User는 노트북의 Webcam에 얼굴을 인식
 2. Webcam에서 row 영상데이터 생성
 3. Media Server에서 가공 및 송출 (FFmpeg 인코딩)
 4. Program Server에서 가공데이터 수신
 
 
 
-학생 등록하기 (oepnCV->dlib->Qt->Pg database)
+학생 등록하기
 
 1. openCV에서 영상데이터를 한 프레임씩 dlib(AI)로 전송
 2. dlib에서 특징점 추출 및 백터값 계산
@@ -47,7 +47,7 @@ CCTV 영상 스트리밍 플로우 (User->WebCam->Media Server->Program Server)
 
 
 
-출석 체크하기 (openCV->dlib->Qt->Pg database)
+출석 체크하기
 
 1. openCV에서 영상데이터를 한 프레임씩 dlib(AI)로 전송
 2. dlib에서 특징점 추출 및 백터값 계산
@@ -66,7 +66,7 @@ CCTV 영상 스트리밍 플로우 (User->WebCam->Media Server->Program Server)
 
 ### ERD
 
-
+![image-20260624155901081](img/image-20260624155901081.png)
 
 
 

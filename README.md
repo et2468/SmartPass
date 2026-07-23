@@ -21,7 +21,7 @@ AI가 자동으로 출석을 확인하고 데이터를 저장해줍니다.
 3. Package: Qt5, FFmpeg, OpenCV, dlib
 4. Package Manager: vcpkg
 5. Build System: CMake
-6. external program: WebCam, MediaMTX, FFmpeg, Postgres Database
+6. External Program: WebCam, MediaMTX, FFmpeg, Postgres Database
 
 
 
